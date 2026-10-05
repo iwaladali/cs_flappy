@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>CS Camera Flappy Bird</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;display:flex;gap:20px;justify-content:center;align-items:flex-start;padding:16px;min-height:100vh}
+h1{font-size:20px;margin:0 0 4px}small{color:#94a3b8}
+#game{border-radius:12px;background:#70c5ce;max-height:92vh;cursor:pointer}
+.side{width:340px;display:flex;flex-direction:column;gap:12px}
+.card{background:#1e293b;border-radius:12px;padding:12px}
+#cam{width:100%;border-radius:8px;background:#000;display:block}
+#status{font-weight:600;margin-top:6px}.ok{color:#4ade80}.bad{color:#f87171}
+select,input,button{width:100%;padding:6px;border-radius:6px;border:0;margin-top:6px;font-size:14px}
+button{background:#3b82f6;color:#fff;cursor:pointer}
+ol{margin:6px 0 0;padding-left:22px}li{padding:2px 0}
+</style></head><body>
+<div><canvas id="game" width="400" height="600"></canvas></div>
+<div class="side">
+ <div class="card"><h1>🖐️ CS Camera Flappy Bird</h1><small>حرّك إصبعك للأعلى بسرعة عشان الطير يطير · Space / Click بديل</small></div>
+ <div class="card">
+  <canvas id="cam" width="320" height="240"></canvas>
+  <div id="status" class="bad">Starting camera…</div>
+  <select id="camSel"></select>
+  <label><small>Sensitivity</small><input id="sens" type="range" min="0.6" max="3" step="0.1" value="1.4"></label>
+ </div>
+ <div class="card"><b>🏆 Leaderboard</b><ol id="lb"></ol><button id="clr" style="background:#475569">Clear</button></div>
+</div>
+<video id="vid" playsinline muted style="display:none"></video>
+<script src="mediapipe/hands.js"></script>
+<script>
+// ---------- Game ----------
+const W=400,H=600,g=document.getElementById('game'),c=g.getContext('2d');
+const GRAV=1400,FLAP=-430,GAP=165,SPEED=150,PW=60;
+let bird,pipes,score,state='ready',last=performance.now(),spawn=0;
+function reset(){bird={y:H/2,v:0};pipes=[];score=0;spawn=0;state='ready';}
+function flap(){
+  if(state==='over'){return;}
+  if(state==='ready')state='play';
+  bird.v=FLAP;
+}
+function die(){state='over';setTimeout(()=>{saveScore();},100);setTimeout(reset,2500);}
+function update(dt){
+  if(state!=='play'){bird.y=H/2+Math.sin(performance.now()/250)*8;return;}
+  bird.v+=GRAV*dt;bird.y+=bird.v*dt;
+  spawn-=dt;if(spawn<=0){pipes.push({x:W,gy:120+Math.random()*(H-240-GAP+100),s:false});spawn=1.6;}
+  pipes.forEach(p=>p.x-=SPEED*dt);pipes=pipes.filter(p=>p.x>-PW);
+  for(const p of pipes){
+    if(!p.s&&p.x+PW<100){p.s=true;score++;}
+    if(100+14>p.x&&100-14<p.x+PW&&(bird.y-14<p.gy||bird.y+14>p.gy+GAP))die();
+  }
+  if(bird.y>H-40||bird.y<0)die();
+}
+function draw(){
+  c.fillStyle='#70c5ce';c.fillRect(0,0,W,H);
+  c.fillStyle='#4ade80';
+  pipes.forEach(p=>{c.fillRect(p.x,0,PW,p.gy);c.fillRect(p.x,p.gy+GAP,PW,H);});
+  c.fillStyle='#d6b36a';c.fillRect(0,H-40,W,40);
+  c.fillStyle='#facc15';c.beginPath();c.arc(100,bird.y,14,0,7);c.fill();
+  c.fillStyle='#000';c.beginPath();c.arc(106,bird.y-4,3,0,7);c.fill();
+  c.fillStyle='#fff';c.strokeStyle='#000';c.lineWidth=4;c.font='bold 44px system-ui';c.textAlign='center';
+  c.strokeText(score,W/2,70);c.fillText(score,W/2,70);
+  c.font='bold 22px system-ui';
+  if(state==='ready'){c.strokeText('Raise your finger to start',W/2,H/2+80);c.fillText('Raise your finger to start',W/2,H/2+80);}
+  if(state==='over'){c.font='bold 40px system-ui';c.strokeText('Game Over',W/2,H/2);c.fillText('Game Over',W/2,H/2);}
+}
+function loop(t){const dt=Math.min((t-last)/1000,.05);last=t;update(dt);draw();requestAnimationFrame(loop);}
+reset();requestAnimationFrame(loop);
+g.addEventListener('pointerdown',flap);
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();flap();}});
+
+// ---------- Leaderboard ----------
+const lbEl=document.getElementById('lb');
+const getLB=()=>{try{return JSON.parse(localStorage.getItem('csflappy')||'[]')}catch(e){return[]}};
+function renderLB(){lbEl.innerHTML=getLB().map(r=>`<li>${r.n.replace(/</g,'&lt;')} — <b>${r.s}</b></li>`).join('');}
+function saveScore(){
+  if(score<1)return;
+  const n=(prompt('Score: '+score+'\nYour name?')||'Anonymous').slice(0,16);
+  const l=getLB();l.push({n,s:score});l.sort((a,b)=>b.s-a.s);
+  try{localStorage.setItem('csflappy',JSON.stringify(l.slice(0,5)));}catch(e){}
+  renderLB();
+}
+document.getElementById('clr').onclick=()=>{if(confirm('Clear leaderboard?')){localStorage.removeItem('csflappy');renderLB();}};
+renderLB();
+
+// ---------- Camera + Hand tracking ----------
+const vid=document.getElementById('vid'),cam=document.getElementById('cam'),cc=cam.getContext('2d');
+const st=document.getElementById('status'),sel=document.getElementById('camSel'),sens=document.getElementById('sens');
+const setStatus=(t,ok)=>{st.textContent=t;st.className=ok?'ok':'bad';};
+const CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+let prevY=null,prevT=0,lastFlap=0,smooth=null;
+function onResults(r){
+  cc.drawImage(vid,0,0,320,240);
+  const lm=r.multiHandLandmarks&&r.multiHandLandmarks[0];
+  if(!lm){setStatus('No hand detected ✋',false);prevY=null;return;}
+  setStatus('Hand tracked ✅',true);
+  const P=i=>[(1-lm[i].x)*320,lm[i].y*240]; // mirrored
+  cc.strokeStyle='#38bdf8';cc.lineWidth=2;
+  CONN.forEach(([a,b])=>{cc.beginPath();cc.moveTo(...P(a));cc.lineTo(...P(b));cc.stroke();});
+  cc.fillStyle='#fff';lm.forEach((_,i)=>{cc.beginPath();cc.arc(...P(i),2.5,0,7);cc.fill();});
+  cc.fillStyle='#f43f5e';cc.beginPath();cc.arc(...P(8),7,0,7);cc.fill();
+  // velocity of index fingertip (landmark 8), units: screen-heights per second
+  const now=performance.now(),y=lm[8].y;
+  smooth=smooth===null?y:smooth*0.4+y*0.6;
+  if(prevY!==null){
+    const vy=(smooth-prevY)/((now-prevT)/1000);
+    if(vy<-parseFloat(sens.value)&&now-lastFlap>280){lastFlap=now;flap();}
+  }
+  prevY=smooth;prevT=now;
+}
+async function startCam(deviceId){
+  if(location.protocol==='file:'){setStatus('Open via start.bat / start.sh (local server), not file://',false);return;}
+  if(vid.srcObject)vid.srcObject.getTracks().forEach(t=>t.stop());
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({video:deviceId?{deviceId:{exact:deviceId},width:640,height:480}:{width:640,height:480}});
+    vid.srcObject=s;await vid.play();
+    const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+    const cur=s.getVideoTracks()[0].getSettings().deviceId;
+    sel.innerHTML=devs.map((d,i)=>`<option value="${d.deviceId}" ${d.deviceId===cur?'selected':''}>${d.label||'Camera '+(i+1)}</option>`).join('');
+    setStatus('Camera on — loading model…',false);
+    track();
+  }catch(e){setStatus('Camera error: '+e.name+' — allow camera access / close other apps using it',false);}
+}
+let hands,running=false;
+async function track(){
+  if(running)return;running=true;
+  hands=new Hands({locateFile:f=>'mediapipe/'+f});
+  hands.setOptions({maxNumHands:1,modelComplexity:0,minDetectionConfidence:0.6,minTrackingConfidence:0.5});
+  hands.onResults(onResults);
+  const tick=async()=>{
+    if(vid.readyState>=2){try{await hands.send({image:vid});}catch(e){setStatus('Model error: '+e.message,false);return;}}
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+sel.onchange=()=>startCam(sel.value);
+startCam();
+</script></body></html>
